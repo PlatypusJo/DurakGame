@@ -9,39 +9,88 @@ using System.IO;
 
 namespace Durak__Fool_
 {
+    [Serializable]
+
     class Human : Player
     {
-        public delegate void MessageHandler(Point point);
-        public event MessageHandler Choose;
-        public Human(int index) : base(index)
+        public static event ChooseEventHandler ChooseCard;
+
+        public Human(int index, int count) : base(index, count)
         {
             show = true;
-            behavior = RoleOfPlayer.Attacker;
+            role = RoleOfPlayer.Attacker;
+            GameTable.ChooseCardEvent += CheckMouseLocation;
+            Card.CheckCardIsOpenedEvent += hand.CheckCardIsOpened;
         }
-        public override void Move(DeckEventArgs eArgs)
+        public override void Move(object sender, MoveEventArgs e)
         {
-            if (eArgs.pos.X >= 0 & eArgs.pos.X <= 1600 & eArgs.pos.Y >= 530 & eArgs.pos.Y <= 850)
-                for (int i = 0; i < 6; i++)
-                {
-                    if (myHand[i].Chosen)
+            if (e.PlayerNum == playerNum)
+            {
+                if (e.NumCardInHand > 0)
+                    for (int i = 0; i < 36 && hand.NumberOfCards > 0; i++)
                     {
-                        eArgs.role = behavior;
-                        eArgs.index = i;
-                        eArgs.sendcard = myHand[i];
-                        myHand.GiveCard(this, eArgs);
+                        if (!(hand[i] is null) && hand[i].Chosen)
+                        {
+                            SendCardEventArgs message = new SendCardEventArgs
+                            {
+                                Role = role,
+                                PlayerNum = e.PlayerNum,
+                                SendCard = hand[i],
+                                Index = i,
+                                Trump = e.Trump,
+                                NumCardInHand = e.NumCardInHand
+                            };
+                            GiveCard(this, message);
+                            e.IsCompleted = message.IsCompleted;
+                            break;
+                        }
                     }
-                }
-            else    
-            {
-                if (eArgs.pos.X >= 510 & eArgs.pos.X <= 960 & eArgs.pos.Y >= 380 & eArgs.pos.Y <= 530) { }
             }
         }
-        public void CheckPoint(Point loc)
+        public override void Decide(DecisionOfPlayer decision)
         {
-            if(loc.X >= 0 && loc.X <= 1600 && loc.Y >= 530 && loc.Y <= 850)
+            this.decision = decision;
+            if (decision == DecisionOfPlayer.TakeCards)
+                AnnulDecisions(this, new GameEventArgs());
+        }
+        public void CheckMouseLocation(object sender, ChooseEventArgs e)
+        {
+            if (e.Pointer.X >= 0 && e.Pointer.X <= 1600 && e.Pointer.Y >= 580 && e.Pointer.Y <= 900)
             {
-                Choose?.Invoke(loc);
+                ChooseCard?.Invoke(this, e);
             }
+        }
+        public override void LeaveGameTable()
+        {
+            base.LeaveGameTable();
+            GameTable.ChooseCardEvent -= CheckMouseLocation;
+            Card.CheckCardIsOpenedEvent -= hand.CheckCardIsOpened;
+            for (int i = 0, j = 0; j < hand.NumberOfCards && i < 36; i++)
+            {
+                if (!(hand[i] is null))
+                {
+                    j++;
+                    ChooseCard -= hand[i].CheckPos;
+                    GameTable.DragCardEvent -= hand[i].ComeToPlace;
+                }
+            }
+        }
+        public override void LoadSpecAndCardsEvents()
+        {
+            base.LoadSpecAndCardsEvents();
+            for (int i = 0, j = 0; j < hand.NumberOfCards && i < 36; i++)
+            {
+                if (!(hand[i] is null))
+                {
+                    j++;
+                    ChooseCard -= hand[i].CheckPos;
+                    ChooseCard += hand[i].CheckPos;
+                }
+            }
+            Card.CheckCardIsOpenedEvent -= hand.CheckCardIsOpened;
+            GameTable.ChooseCardEvent -= CheckMouseLocation;
+            Card.CheckCardIsOpenedEvent += hand.CheckCardIsOpened;
+            GameTable.ChooseCardEvent += CheckMouseLocation;
         }
     }
 }

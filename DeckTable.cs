@@ -9,50 +9,57 @@ using System.IO;
 
 namespace Durak__Fool_
 {
+    [Serializable]
+
     class DeckTable : Deck
     {
-        public event DeckEvent GetEvent;
+        public static event SendCardEventHandler DealCardEvent;
 
-        private Bitmap trumpCardImage;
+        private Image trumpCardImage;
 
         public DeckTable(out Suit trump)
         {
             point.X = 350;
             point.Y = 400;
-            countOfCards = 35;
+            countOfCards = 36;
             cards = new Card[36];
             for (Suit i = Suit.Hearts; i <= Suit.Clubs; i++)
             {
                 for (int j = 0; j < 9; j++)
                 {
-                    cards[((int)i + j) + (int)i * 8] = new RealCard(i, j);
+                    cards[((int)i + j) + (int)i * 8] = new Card(i, j, point.X - 150, point.Y);
                 }
             }
             Mix();
             trump = cards[0].Suit;
-            trumpCardImage = new Bitmap($@"..\..\CardSkin\{(int)cards[0].Suit}\{cards[0].Rank % 9}.png");
-            
+            trumpCardImage = (Bitmap)Properties.Resources.ResourceManager.GetObject($"{(int)cards[0].Suit}" + $"{cards[0].Rank}");
+            Player.AscCardsEvent += GiveCard;
+            //BotPlayer.CollectDataFieldEvent += ShowDealerHand;
         }
-        public override void GiveCard(object sender, DeckEventArgs eArgs) //выдаёт картуDu
+        public override void GiveCard(object sender, SendCardEventArgs e) //выдаёт карту
         {
             if (countOfCards > 0)
             {
-                for (int i = countOfCards; i > countOfCards - eArgs.count && countOfCards - eArgs.count >= 0; i--)
+                if (e.NumCardInHand > countOfCards)
+                    e.NumCardInHand = countOfCards;
+                e.Trump = cards[0].Suit;
+                for (int i = countOfCards - 1, end = i - e.NumCardInHand; countOfCards > 0 && i > end; i--)
                 {
-                    eArgs.sendcard = cards[i];
-                    GetEvent?.Invoke(sender, eArgs);
+                    e.SendCard = cards[i];
+                    e.NumCardInHand--;
+                    DealCardEvent?.Invoke(sender, e);
+                    countOfCards--;
+                    cards[i] = null;
                 }
-                countOfCards -= eArgs.count;
-                Array.Clear(cards, countOfCards + 1, eArgs.count);
                 if (countOfCards == 0) 
-                        trumpCardImage = ChangeImageOpacity(trumpCardImage, 170); 
+                    trumpCardImage = ChangeImageOpacity((Bitmap)trumpCardImage, 140); 
             }
         }
         private void Mix() // функция перемешивания
         { 
             Random random = new Random();
             for (int i = cards.Length-1; i >= 0; i--) 
-            { 
+            {
                 int j = random.Next(i + 1);
                 if (j != i)
                 {
@@ -67,8 +74,18 @@ namespace Durak__Fool_
             graphics.DrawImage(trumpCardImage, point.X + 40, point.Y - 40, 80, 120);
             for (int i = 1; i < countOfCards; i++)
             {
-                graphics.DrawImage(new Bitmap(@"..\..\CardSkin\up.png"), point.X - i * 2, point.Y, 80, 120);
-            }   
+                graphics.DrawImage(new Bitmap(Properties.Resources.backcard), point.X - i * 2, point.Y, 80, 120);
+            }
+            if (countOfCards > 0)
+                graphics.DrawString(countOfCards.ToString(), new Font(Control.DefaultFont, FontStyle.Bold), new SolidBrush(Color.Black), new PointF(350, 370));
+        }
+        public void LoadCardsEvents()
+        {
+            for (int i = 0; i < countOfCards; i++)
+            {
+                GameTable.DragCardEvent -= cards[i].ComeToPlace;
+                GameTable.DragCardEvent += cards[i].ComeToPlace;
+            }
         }
         private Bitmap ChangeImageOpacity(Bitmap image, int a) // меняет прозрачность козырной карты (когда колода пуста)
         {

@@ -16,7 +16,7 @@ namespace Durak__Fool_
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new GameTable());
+            Application.Run(new MainMenu());
         }
     }
 }

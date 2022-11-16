@@ -9,164 +9,133 @@ using System.IO;
 
 namespace Durak__Fool_
 {
-    public class DeckEventArgs : EventArgs
-    {
-        public Card[,] gamefield;
-        public Card sendcard;
-        public Suit trump;
-        public RoleOfPlayer role;
-        public Point pos;
-        public int count;
-        public int index;
-        public bool mademove;
-        public DeckEventArgs() : base() 
-        {
-            gamefield = new Card[2, 6];
-        }
-    }
+    [Serializable]
 
-    public delegate void DeckEvent(object sender, DeckEventArgs eArgs);
-    class DeckHand : Deck
+    class DeckHand : DeckReceiver
     {
-        public event DeckEvent GetEvent;
+        public static event SendCardEventHandler GiveCardEvent;
 
-        int dX;
         internal enum Key
         {
-            Rang,
-            Lear
+            Rank,
+            Suit
         }
 
-        public DeckHand(int xcoord, int ycoord) 
+        public DeckHand(int xcoord, int ycoord, int playerNum) 
         {
-            dX = 50;
-            cards = new RealCard[36];
+            dX = 50; //30 ставим если много карт (скорее всего когда доходим до 10)
+            this.playerNum = playerNum; 
+            cards = new Card[36];
             point = new Point(xcoord, ycoord);
             countOfCards = 0;
+            DeckTable.DealCardEvent += TakeCard;
+            GameField.ReturnCardsEvent += TakeCard;
         }
-        public void GetCard(object sender, DeckEventArgs eArgs) //принимает карту
+        public override void TakeCard(object sender, SendCardEventArgs e) //принимает карту
         {
-            cards[countOfCards] = eArgs.sendcard;
-            if (sender is Human human)
+            if (e.PlayerNum == playerNum)
             {
-                ((RealCard)cards[countOfCards]).CheckCardIsOpenedEvent += CheckOpenedCard;
-                human.Choose += cards[countOfCards].CheckPos;
-            }
-            countOfCards++;
-            
-        }
-        public override void GiveCard(object sender, DeckEventArgs eArgs) //выдаёт карту
-        {       
-            if (GetEvent != null)
-            {
-                GetEvent.Invoke(sender, eArgs);
-                if (eArgs.mademove)
+                for (int i = 0; i < 36; i++)
                 {
-                    if (sender is Human human)
+                    if (cards[i] is null)
                     {
-                        ((RealCard)cards[eArgs.index]).CheckCardIsOpenedEvent -= CheckOpenedCard;
-                        human.Choose -= cards[eArgs.index].CheckPos;
-                    }
-                    eArgs.sendcard = cards[eArgs.index] = null;
-                    eArgs.index = 0;
-                    countOfCards--;
-                }
-            }
-        }
-        private bool CheckOpenedCard(object sender, ChooseEventArgs eArgs)
-        {
-            eArgs.dX = dX;
-            int indexOfCard = Array.FindIndex(cards, 0, 36, card => card is null ? false : card == eArgs.sentCard);
-            return indexOfCard == 35 || cards[indexOfCard + 1] is null;
-        }
-        public void Sort(Suit thrLear) // функция сортировки
-        {
-            int i = 0, end = i;
-            for (; i < countOfCards; i++)
-            {
-                if (cards[i].Suit != thrLear)
-                {
-                    bool flag = true;
-                    for (int j = i + 1; j < countOfCards && flag; j++)
-                        if (cards[j].Suit == thrLear)
+                        cards[i] = e.SendCard;
+                        countOfCards++;
+                        if (sender is Human)
                         {
-                            flag = false;
-                            end = i;
-                            Card buf = cards[i];
-                            cards[i] = cards[j];
-                            cards[j] = buf;
+                            Human.ChooseCard += cards[i].CheckPos;
+                            AlignTheCards();
                         }
-                }
-                else
+                        break;
+                    }
+                } 
+                if (e.NumCardInHand == 0)
                 {
-                    end = i;
+                    SortCardsInHand(e.Trump);
+                    SetCoordinates();
+                }  
+            }
+              
+        }
+        public override void GiveCard(object sender, SendCardEventArgs e) //выдаёт карту
+        {
+            GiveCardEvent?.Invoke(sender, e);
+            if (e.IsCompleted)
+            {
+                if (sender is Human)
+                {
+                    Human.ChooseCard -= cards[e.Index].CheckPos;
+                }
+                cards[e.Index] = null;
+                e.SendCard = null;
+                e.Index = 0;
+                countOfCards--;
+                if (sender is BotPlayer)
+                {
+                    AlignTheCards();
+                    SetCoordinates();
                 }
             }
-            qSort(0, end, Key.Rang);
-            int beg = i = end;
-            if (cards[beg].Suit == thrLear)
-                qSort(i = beg = ++end, countOfCards - 1, Key.Lear);
-            else
-                qSort(i = beg = end++, countOfCards - 1, Key.Lear);
-            while (i != countOfCards) 
+        }
+        public override void Draw(Graphics graphics, bool vis)
+        {
+            for (int i = 0, j = 0; i < 36 && j < countOfCards; i++)
             {
-                if (cards[i + 1] is null || cards[i].Suit != cards[i + 1]?.Suit)
+                if (!(cards[i] is null))
+                {
+                    cards[i].Draw(graphics, vis);
+                    j++;
+                }
+            }
+        } 
+        public bool CheckCardIsOpened(object sender, ChooseEventArgs e) //проверка открытости карты
+        {  
+            int index = Array.FindIndex(cards, 0, 36, card => card is null ? false : (card.Suit == e.CardInHand.Suit && card.Rank == e.CardInHand.Rank));
+            if (dX != 50 && index < 35 && cards[index + 1] is null) 
+                e.DX = dX * 2; 
+            else 
+                e.DX = dX;
+            return dX == 50 ? (index == 35 || cards[index + 1] is null) : (index == 35 || index == 34 && cards[35] is null || index < 34 && cards[index + 1] is null && cards[index + 2] is null);
+            #region variants
+            //1.
+            //if (dX != 50) eArgs.DX *= 20 else eArgs.DX = dX;
+            //return dX == 50 ? indexOfCard == 35 || cards[indexOfCard + 1] is null : (indexOfCard == 35 || indexOfCard == 34 && cards[35] is null) || (cards[indexOfCard + 1] is null && cards[indexOfCard + 2 > 35 ? 35 : indexOfCard + 2] is null);
+            //=================================================================================================================
+            //2.
+            //bool res = dX == 50 ? indexOfCard == 35 || cards[indexOfCard + 1] is null : indexOfCard == 35 || (cards[indexOfCard + 1] is null && cards[indexOfCard + 2] is null);
+            //if (!res) eArgs.DX += 20;
+            //return res;
+            #endregion
+        }
+        private void SortCardsInHand(Suit trump_suit) // функция сортировки карт в руке игрока
+        {
+            QSort(0, countOfCards - 1, Key.Suit, trump_suit);
+            for (int i = 0, beg = 0, end; i != countOfCards;)
+            {
+                if (i + 1 == 36 || cards[i + 1] is null || cards[i].Suit != cards[i + 1]?.Suit)
                 {
                     end = i;
-                    qSort(beg, end, Key.Rang); 
-                    beg = ++i;   
+                    QSort(beg, end, Key.Rank, trump_suit);
+                    beg = ++i;
                 }
                 else i++;
             }
-            SetCoordinates();
-            #region nafig
-            //bool flag = false;
-            //for (int i=0;i<LastCard;i++)
-            //{
-            //    if(cards[i].Lear != thrLear)
-            //    {
-            //        for (int j=i+1;j<LastCard;j++)
-            //            if(cards[j].Lear==thrLear)
-            //            {
-            //                endLine=i;
-            //                Card bufCard = cards[i];
-            //                cards[i] = cards[j];
-            //                cards[j] = bufCard;
-            //            }
-            //    }
-            //    else
-            //    {
-            //        endLine=i;
-            //    }
-            //}
-            //if (endLine >= 0)
-            //{
-            //    qSort(0, endLine);
-            //    flag = true;
-            //}
-            //else
-            //    qSort(0, LastCard-1);
-            //if (flag)
-            //{
-            //    endLine++;
-            //    qSort(endLine, LastCard-1);
-            //}
-            #endregion
+            //SetCoordinates();
         }
-        private void qSort(int left, int right, Key key) //быстрая сортировка
+        private void QSort(int left, int right, Key key, Suit trump_suit) //быстрая сортировка
         {
             int i = left, j = right;
             Card tCard = cards[(left + right) / 2];
             do
             {
-                if (key == Key.Lear)
+                if (key == Key.Suit)
                 {
-                    while (cards[i].Suit < tCard.Suit) i++;
-                    while (tCard.Suit < cards[j].Suit) j--;
+                    while (ConvertSuitToInt(cards[i].Suit, trump_suit) > ConvertSuitToInt(tCard.Suit, trump_suit)) i++;
+                    while (ConvertSuitToInt(tCard.Suit, trump_suit) > ConvertSuitToInt(cards[j].Suit, trump_suit)) j--;
                 }
                 else
                 {
-                    if (key == Key.Rang)
+                    if (key == Key.Rank)
                     {
                         while (cards[i].Rank > tCard.Rank) i++;
                         while (tCard.Rank > cards[j].Rank) j--;
@@ -181,36 +150,18 @@ namespace Durak__Fool_
                     j--;
                 }
             } while (i <= j);
-            if (left < j) qSort(left, j, key);
-            if (i < right) qSort(i, right, key);
+            if (left < j) QSort(left, j, key, trump_suit);
+            if (i < right) QSort(i, right, key, trump_suit);
         }
-        private void SetCoordinates() // устанавливает координаты карт
+        private int ConvertSuitToInt(Suit suit_of_card, Suit trump_suit)
         {
-            for (int i=0;i < countOfCards;i++)
-            {
-                cards[i].X = point.X + i * dX;
-                cards[i].Y = point.Y;
-            }
+            return suit_of_card == trump_suit ? 4 : (int)suit_of_card;
         } 
-        public override void Draw(Graphics graphics, bool vis)
-        {
-            for (int i = 0, j = 0; i < 36 && j <= countOfCards; i++)
-            {
-                if (!(cards[i] is null))
-                {
-                    cards[i].Draw(graphics, vis);
-                    j++;
-                }
-            }
-        }
         public Card this[int index]
         {
             get
             {
-                if (index < 36 ? cards[index] is null ? false : true : false)
-                    return cards[index];
-                else
-                    return new NullCard();
+                return cards[index % 36];
             }
         }
     }

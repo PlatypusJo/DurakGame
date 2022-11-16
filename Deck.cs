@@ -9,14 +9,15 @@ using System.IO;
 
 namespace Durak__Fool_
 {
+    [Serializable]
+
     abstract class Deck
     {
         protected int countOfCards;
         protected Point point;
         protected Card[] cards;
 
-        public Deck() { }
-        abstract public void GiveCard(object sender, DeckEventArgs eArgs);
+        abstract public void GiveCard(object sender, SendCardEventArgs e);
         abstract public void Draw(Graphics graphics, bool vis);
         public int NumberOfCards
         {
